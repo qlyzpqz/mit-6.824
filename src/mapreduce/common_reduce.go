@@ -1,5 +1,13 @@
 package mapreduce
 
+import (
+	"os"
+	"strings"
+	"log"
+	"io/ioutil"
+	"encoding/json"
+)
+
 // doReduce manages one reduce task: it reads the intermediate
 // key/value pairs (produced by the map phase) for this task, sorts the
 // intermediate key/value pairs by key, calls the user-defined reduce function
@@ -43,4 +51,48 @@ func doReduce(
 	// }
 	// file.Close()
 	//
+	var groupKVS map[string][]string = make(map[string][]string)
+	for i := 0; i < nMap; i++ {
+		fileName := reduceName(jobName, i, reduceTaskNumber)
+		file, err := os.Open(fileName)
+		if err != nil {
+			log.Println("open middle file failed")
+			return
+		}
+		content, err := ioutil.ReadAll(file)
+		if err != nil {
+			log.Println("read file content failed")
+			return
+		}
+		var kvs []KeyValue = make([]KeyValue, 0)
+		decoder := json.NewDecoder(strings.NewReader(string(content)))
+		err = decoder.Decode(&kvs)
+		if err != nil {
+			log.Println("decode middle file failed")
+		}
+
+		for _, kv := range kvs {
+			if _, exist := groupKVS[kv.Key]; exist {
+				groupKVS[kv.Key] = append(groupKVS[kv.Key], kv.Value)
+			} else {
+				groupKVS[kv.Key] = make([]string, 0)
+				groupKVS[kv.Key] = append(groupKVS[kv.Key], kv.Value)
+			}
+		}
+	}
+
+	out, err := os.OpenFile(outFile, os.O_RDWR | os.O_CREATE, 0666)
+	if err != nil {
+		log.Println("open out file failed")
+		return
+	}
+	encoder := json.NewEncoder(out)
+	for key, values := range groupKVS {
+		value := reduceF(key, values)
+		encoder.Encode(KeyValue{
+			Key: key,
+			Value: value,
+		})
+	}
+	out.Close()
 }

@@ -2,7 +2,11 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"strconv"
 	"mapreduce"
+	"strings"
+	"unicode"
 	"os"
 )
 
@@ -14,7 +18,33 @@ import (
 // of key/value pairs.
 //
 func mapF(filename string, contents string) []mapreduce.KeyValue {
+
 	// TODO: you have to write this function
+	words := strings.FieldsFunc(contents, func (ch rune) bool {
+		return !unicode.IsLetter(ch)
+	})
+
+	var word_count map[string]int = make(map[string]int, 0)
+
+	for _, word := range words {
+		if _, exist := word_count[word]; exist {
+			word_count[word]++
+		} else {
+			word_count[word] = 1
+		}
+	}
+
+	var arr = make([]mapreduce.KeyValue, 0)
+	for key, count := range word_count {
+		kv := mapreduce.KeyValue {
+			Key: key,
+			Value: strconv.Itoa(count),
+		}
+		arr = append(arr, kv)
+		//fmt.Printf("map\t%s\t%s\t%d\n", filename, key, count)
+		//fmt.Printf("map\t%s\t%d\n", key, count)
+	}
+	return arr
 }
 
 //
@@ -24,6 +54,18 @@ func mapF(filename string, contents string) []mapreduce.KeyValue {
 //
 func reduceF(key string, values []string) string {
 	// TODO: you also have to write this function
+	var sum int = 0
+
+	for _, value := range values {
+		num, err := strconv.Atoi(value)
+		//fmt.Printf("reduce\t%s\t%d\n", key, num)
+		if err != nil {
+			log.Println("parse int from string failed")
+			return strconv.Itoa(sum)
+		}
+		sum += num
+	}
+	return strconv.Itoa(sum)
 }
 
 // Can be run in 3 ways:
