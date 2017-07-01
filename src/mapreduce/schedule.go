@@ -1,6 +1,9 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 //
 // schedule() starts and waits for all tasks in the given phase (Map
@@ -32,5 +35,70 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	//
 	// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
 	//
+	var waitGroup sync.WaitGroup
+	var taskChan = make(chan int, ntasks)
+	var closeChan = make(chan int)
+	var resultChan = make(chan int, ntasks)
+
+	go func (closeChan chan int) {
+		LOOP:
+		for {
+			select {
+			case addr := <-registerChan:
+				waitGroup.Add(1)
+				go func (addr string, phase jobPhase, taskChan chan int) {
+					defer waitGroup.Done()
+					var res = struct{}{}
+
+					for task := range taskChan {
+						var arg DoTaskArgs
+						switch phase {
+						case mapPhase:
+							arg = DoTaskArgs{
+								JobName: jobName,
+								File: mapFiles[task],
+								Phase: mapPhase,
+								TaskNumber: task,
+								NumOtherPhase: n_other,
+							}
+						case reducePhase:
+							arg = DoTaskArgs{
+								JobName: jobName,
+								File: "",
+								Phase: reducePhase,
+								TaskNumber: task,
+								NumOtherPhase: n_other,
+							}
+						}
+						success := call(addr, "Worker.DoTask", arg, &res)
+						if success {
+							resultChan <- task
+						} else {
+							taskChan <- task
+						}
+					}
+				}(addr, phase, taskChan)
+			case <-closeChan:
+				break LOOP
+			}
+		}
+	}(closeChan)
+
+	for i := 0; i < ntasks; i++ {
+		taskChan <- i
+	}
+
+	var num int = 0;
+	for _ = range resultChan {
+		num++
+		if num == ntasks {
+			break
+		}
+	}
+	close(taskChan)
+
+	waitGroup.Wait()
+	close(closeChan)
+
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
